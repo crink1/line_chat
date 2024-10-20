@@ -1,0 +1,8 @@
+#设置要拉取的镜像
+FROM ubuntu:22.04
+#宿主机拷贝到镜像
+WORKDIR /
+COPY ./a.out .
+#安装编译器
+
+CMD [ "/a.out" ]

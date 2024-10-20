@@ -1,0 +1,183 @@
+version: "3.8"
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.3.25
+    container_name: etcd-service
+    environment:
+      - ETCD_NAME=etcd-s1
+      - ETCD_DATA_DIR=/var/lib/etcd
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
+    volumes:
+      - ./middle/data/etcd:/var/lib/etcd:rw
+    ports:
+      - 2379:2379
+    restart: always
+  mysql:
+    image: mysql:8.0.39
+    container_name: mysql-service
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d/:rw
+      - ./middle/data/mysql:/var/lib/mysql:rw
+    ports:
+      - 3306:3306
+    restart: always
+  redis:
+    image: redis:6.0.16
+    container_name: redis-service
+    volumes:
+      - ./middle/data/redis:/var/lib/redis:rw
+    ports:
+      - 6379:6379
+    restart: always
+  elasticsearch:
+    image: elasticsearch:7.17.21
+    container_name: elasticsearch-service
+    environment:
+      - "discovery.type=single-node"
+    volumes:
+      - ./middle/data/elasticsearch:/data:rw
+    ports:
+      - 9200:9200
+      - 9300:9300
+    restart: always
+  rabbitmq:
+    image: rabbitmq:3.9.13
+    container_name: rabbitmq-service
+    environment:
+      RABBITMQ_DEFAULT_USER: root
+      RABBITMQ_DEFAULT_PASS: 123456
+    volumes:
+      - ./middle/data/rabbitmq:/var/lib/rabbitmq:rw
+    ports:
+      - 5672:5672
+    restart: always
+
+  file_server:
+    build: ./file
+    #image: server-user_server
+    container_name: file_server-service
+    volumes:
+      - ./conf/file_server.conf:/lc/conf/file_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10002:10002
+    restart: always
+    depends_on:
+      - etcd
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379 -c "/lc/bin/file_server -flagfile=/lc/conf/file_server.conf"
+  friend_server:
+    build: ./friend
+    #image: file-server:v1
+    container_name: friend_server-service
+    volumes:
+      - ./conf/friend_server.conf:/lc/conf/friend_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10006:10006
+    restart: always
+    depends_on:
+      - etcd
+      - mysql
+      - elasticsearch
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379,3306,9200 -c "/lc/bin/friend_server -flagfile=/lc/conf/friend_server.conf"
+  gateway_server:
+    build: ./gateway
+    #image: file-server:v1
+    container_name: gateway_server-service
+    volumes:
+      - ./conf/gateway_server.conf:/lc/conf/gateway_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 8000:8000
+      - 8001:8001
+    restart: always
+    depends_on:
+      - etcd
+      - redis
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379,6379 -c "/lc/bin/gateway_server -flagfile=/lc/conf/gateway_server.conf"
+  message_server:
+    build: ./message
+    #image: file-server:v1
+    container_name: message_server-service
+    volumes:
+      - ./conf/message_server.conf:/lc/conf/message_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10005:10005
+    restart: always
+    depends_on:
+      - etcd
+      - mysql
+      - elasticsearch
+      - rabbitmq
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379,3306,9200,5672 -c "/lc/bin/message_server -flagfile=/lc/conf/message_server.conf"
+  speech_server:
+    build: ./speech
+    #image: file-server:v1
+    container_name: speech_server-service
+    volumes:
+      - ./conf/speech_server.conf:/lc/conf/speech_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10001:10001
+    restart: always
+    depends_on:
+      - etcd
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379 -c "/lc/bin/speech_server -flagfile=/lc/conf/speech_server.conf"
+  transmite_server:
+    build: ./transmit
+    #image: file-server:v1
+    container_name: transmit_server-service
+    volumes:
+      - ./conf/transmit_server.conf:/lc/conf/transmit_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10004:10004
+    restart: always
+    depends_on:
+      - etcd
+      - mysql
+      - rabbitmq
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379,3306,5672 -c "/lc/bin/transmit_server -flagfile=/lc/conf/transmit_server.conf"
+  user_server:
+    build: ./user
+    #image: file-server:v1
+    container_name: user_server-service
+    volumes:
+      - ./conf/user_server.conf:/lc/conf/user_server.conf
+      - ./middle/data/logs:/lc/logs:rw
+      - ./middle/data/data:/lc/data:rw
+      - ./entrypoint.sh:/lc/bin/entrypoint.sh
+    ports:
+      - 10003:10003
+    restart: always
+    depends_on:
+      - etcd
+      - mysql
+      - redis
+      - elasticsearch
+    entrypoint:
+      /lc/bin/entrypoint.sh -h 172.26.194.94 -p 2379,3306,5672,9200 -c "/lc/bin/user_server -flagfile=/lc/conf/user_server.conf"
+  
